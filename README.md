@@ -117,7 +117,7 @@ Supports:
 
 Numeric constants starts with digit and can contain decimal point.
 String constants are enclosed in single or double quotes (`'` or `"`). To escape the quotes symbol itself it can be typed twice.
-Identifiers are starts with a letter or underscore
+Identifiers contain letters or underscore, and can contain digits (except for first char) 
 
 Priority of operations (from highest to lowest):
 1. Expressions in **parentheses** are calculated first;
@@ -204,7 +204,7 @@ Once and most important optimization is precalculation of constant expressions. 
 
 Some less obvious optimizations also can be peformed. Such as combining successive concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
 
-To check how optimizations were done, you can use `debugDump()` method of a single expression. It will return textual representation of evaluation tree. 
+To check how optimizations were done, you can use `debugDump()` method of a `SimpleExpression`. It will return textual representation of evaluation tree. 
 
 ```php
   $s = "(PI > 3) ? sin(x * 2 * PI) : sqrt(y)"; 
