@@ -195,3 +195,24 @@ If the expression references some unlisted variable, the `SimpleExpressionParseE
 
 **NOTE:** expression is case insensetive. All variable names are turned into the lower case. 
 So, array passed to `run` method should have keys in lower case
+
+## Optimizations
+
+At the compile time some optimizations may be performed.
+
+Once and most important optimization is precalculation of constant expressions. for example in expression `sin(PI / 2)` (considering usage of default context) at the compile-time, PI will replaced by the constant value, then PI / 2 expression is calculated, then sin function performed. Returned value will be stored as a constant in the resulting expression, avoiding recalculation of the same expression on each run.
+
+Some less obvious optimizations also can be peformed. Such as combining successive concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
+
+To check how optimizations were done, you can use `debugDump()` method of a single expression. It will return textual representation of evaluation tree. 
+
+```php
+  $s = "(PI > 3) ? sin(x * 2 * PI) : sqrt(y)"; 
+  $e = new SimpleExpression($s);
+  print $e->debugDump();
+```
+will output `@sin(({x} * (const 6.2831853071796)))`
+
+In this string `@` means function call; `{...}` - variable access; `(const ...)` - constant node.
+
+Here, PI is a constant, which is greater than 3, so whole coditional expression is replaced by it's "if_true" part, where named constant is replaced by it's value and two constant-on-the-right multiplications `* 2 * PI` are combined into a single one. 
