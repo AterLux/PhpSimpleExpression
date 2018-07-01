@@ -102,6 +102,47 @@ To unregister functions use `unregisterFunction` method. The alias, array of mul
 
 **NOTE:** At the compile time, all named constants replaced by it's values, and functions calls replaced by corresponding `ReflectionFunction`. So, altering the context after the expession is compiled will not have any effect on the compiled expression.
 
+### Default Context
+
+Default context contains constant `PI` and also has sevaral functions registered
+
+Function alias | Comment
+-------------- | -------
+`sin(x)` | Sine
+`cos(x)` | Cosine
+`asin(x)` | Inverse sine
+`acos(x)` | Inverse consine
+`tan(x)` | Tangent
+`atan(x)` | Inverse tangent
+`atan2(x, y)` | Arc tangen of y / x in correct quadrant ([see](http://php.net/manual/en/function.atan2.php))
+`deg2rad(x)`  | Degree to radians
+`rad2deg(x)` | Radians to degree
+`abs(x)` | Absolute value
+`floor(x)` | Round down to integer
+`ceil(x)` | Round up to integer
+`round(x[, precision])` | Round to closest value ([see](http://php.net/manual/en/function.round.php))
+`ln(x)` | Natural logarithm (See notes)
+`log(x, base)` | Logarithm by arbitrary base (see notes)
+`lg(x)`, `log10(x)` | Logarithm by base 10 ([see](http://php.net/manual/en/function.log10.php))
+`min(...)` | Lowest value of multiple arguments
+`max(...)` | Highest value of multiple arguments
+`substr(string, start[, length])` | substring ([see](http://php.net/manual/en/function.substr.php))
+`strlen(string)` | Length of the string
+`upper(string)` | Uppercase of the string ([see](http://php.net/manual/en/function.strtoupper.php))
+`lower(string)` | Lowercase of the string ([see](http://php.net/manual/en/function.strtolower.php))
+`replace(search, replace, subject) | Replaces occurrences of search string in the subject ([See](http://php.net/manual/en/function.str-replace.php))
+`regexp(pattern, subject)` | performs a regular expression match (Uses php's [preg_match](http://php.net/manual/en/function.preg-match.php))
+`regexp_replace(pattern, replacement, subject[, limit])` | performs a regular expression-based replace (Uses php's [preg_replace](http://php.net/manual/en/function.preg-replace.php))
+`number_format(number[, decimals[, dec_point, thousands_sep]])` | Formats a number ([See](http://php.net/manual/en/function.number-format.php))
+`format(format, ...)` | Formats a string (Uses php's [sprintf](http://php.net/manual/en/function.sprintf.php))
+`random([a[, b]])` (volatile) | Returns random number: 1) if no parameters, then float number not less than 0 but less than 1; 2) if one parameter, then integer less than this number, but not less than zero; 3) if two parameters then integer between first and second, inclusive. if second parameter less than first, then first parameter is returned.
+`date(format[, timestamp]) (volatile) | formats date/time into a string ([see](http://php.net/manual/en/function.date.php))
+
+**NOTES:**
+* Some function names are different from names of corresponding functions in php. It made to compatiblity to such expression parsers made on other languages.
+* `ln` and `log` functions are both aliases for php's [log function](http://php.net/manual/en/function.log.php), and therefore share the functionality with optional second parameter. But it is recommended to use `ln` for natural logarithm, and `log` for base-specified.
+
+
 ## Expression syntax
 
 Supports:
