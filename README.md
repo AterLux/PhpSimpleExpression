@@ -5,29 +5,29 @@ This is a simple expression parser and evaluator for PHP.
 
 It utilizes function enclosures (which are introduced in PHP 5.3) to evaluate expressions really fast, without using `eval` and keeping the user-entered code safely isolated.
 
-It implements model "compile once - evaluate multiple times". The same expression can be evaluated against different variable values hundreds of thousands times per second.
+It implements model "compile once - evaluate multiple times". The same expression can be evaluated against different variable values hundreds of thousands of times per second.
 
 It works in two modes:
 
 ## Single Expression Mode
 
-This is default mode. In this mode input string is passed as a single expression. 
+This is the default mode. In this mode, the input string is passed as a single expression. 
 For example: `x ^ 2 + sqrt(y) * 4`
 
 ```php
- $expression = "x ^ 2 + sqrt(y) * 4"; 
- $se = new SimpleExpression($expression); // Compile the expression, using default context
- ...
+  $expression = "x ^ 2 + sqrt(y) * 4"; 
+  $se = new SimpleExpression($expression); // Compile the expression, using default context
+  ...
  
- $vars = array('x' => 20, 'y' => 16); // set list of variables
- $result = $se->run($vars); // evaluate the parsed expression against this variable values
+  $vars = array('x' => 20, 'y' => 16); // set list of variables
+  $result = $se->run($vars); // evaluate the parsed expression against this variable values
   
- print $result . PHP_EOL; // prints the result: 416
+  print $result . PHP_EOL; // prints the result: 416
 ```  
   
 ## Enclosed Expression Mode
 
-In this mode the input string is cosidered as a text string with one or many substitutions, each is an expression enclosed in square brackets.
+In this mode the input string is considered as a text string with one or many substitutions, each is an expression enclosed in square brackets.
 For example: `I have [num_of_carrot] carrot[num_of_carrot != 1 ? 's'], [num_of_apple] apple[num_of_apple != 1 ? 's'] and [num_of_banana] banana[num_of_banana != 1 ? 's']`
 
 ```php
@@ -73,8 +73,8 @@ $my_context->registerConstants(array('MAX_WIDTH' => 128, 'MAX_HEIGHT' => 64)); /
 ```
 To remove a constant you can use `unregisterConstant` method. Pass a constant name, or array of multiple names, or '*' string to remove all.
 
-**NOTE** `NULL` can be registered in the context, but at the compile time will be considered as non-declared, and therefore replaced by an operation of accessing variable of the same name.
-You can use `NULL` to supress unwanted constants, declared in the parent context, if their names are required as variable names.
+**NOTE** `NULL` can be registered in the context, but at the compile time will be considered as non-declared, and therefore replaced by an operation of accessing a variable of the same name.
+You can use `NULL` to suppress unwanted constants, declared in the parent context, if their names are required as variable names.
 
 ### Functions
 
@@ -83,7 +83,7 @@ You can declare custom functions to be used in expressions.
 To register a function you can use `registerFunction(function[, alias[, is_volatile]])` method. 
 `function` can be name or function or function enclosure.
 `alias` can be used to set make the function accessible by an alternative name from a script.
-set `is_volatile` to true, if function has side-effects, i.e. it can return different values with the same parameters. `rand`, `date` - are examples of such functions.
+set `is_volatile` to true, if the function has side-effects, i.e. it can return different values with the same parameters. `rand`, `date` - are examples of such functions.
 Otherwise, if only constant parameters passed to the function, it will be calculated and replaced by a constant on the compile-time.
 
 ```php
@@ -96,15 +96,15 @@ Otherwise, if only constant parameters passed to the function, it will be calcul
   $my_context->registerFunction('time', 'get_time', true); // Register a volatile function with alternative alias
 ```
 
-You also can use `registerFunctions(array[, is_volatile])` method to register multiple functions at once. If keys of array items is not numerical, then it used as an alias.
+You also can use `registerFunctions(array[, is_volatile])` method to register multiple functions at once. If key of array item is not numerical, then it is used as an alias.
 
 To unregister functions use `unregisterFunction` method. The alias, array of multiple aliases or '*' to remove all can be passed.
 
-**NOTE:** At the compile time, all named constants replaced by it's values, and functions calls replaced by corresponding `ReflectionFunction`. So, altering the context after the expession is compiled will not have any effect on the compiled expression.
+**NOTE:** At the compile time, all named constants replaced by its values, and functions calls replaced by corresponding `ReflectionFunction`. So, altering the context after the expression is compiled will not have any effect on the compiled expression.
 
 ### Default Context
 
-Default context contains constant `PI` and also has sevaral functions registered
+Default context contains constant `PI` and also has several functions registered
 
 Function alias | Comment
 -------------- | -------
@@ -130,16 +130,16 @@ Function alias | Comment
 `strlen(string)` | Length of the string
 `upper(string)` | Uppercase of the string ([see](http://php.net/manual/en/function.strtoupper.php))
 `lower(string)` | Lowercase of the string ([see](http://php.net/manual/en/function.strtolower.php))
-`replace(search, replace, subject) | Replaces occurrences of search string in the subject ([See](http://php.net/manual/en/function.str-replace.php))
+`replace(search, replace, subject)` | Replaces occurrences of search string in the subject ([See](http://php.net/manual/en/function.str-replace.php))
 `regexp(pattern, subject)` | performs a regular expression match (Uses php's [preg_match](http://php.net/manual/en/function.preg-match.php))
 `regexp_replace(pattern, replacement, subject[, limit])` | performs a regular expression-based replace (Uses php's [preg_replace](http://php.net/manual/en/function.preg-replace.php))
 `number_format(number[, decimals[, dec_point, thousands_sep]])` | Formats a number ([See](http://php.net/manual/en/function.number-format.php))
 `format(format, ...)` | Formats a string (Uses php's [sprintf](http://php.net/manual/en/function.sprintf.php))
 `random([a[, b]])` (volatile) | Returns random number: 1) if no parameters, then float number not less than 0 but less than 1; 2) if one parameter, then integer less than this number, but not less than zero; 3) if two parameters then integer between first and second, inclusive. if second parameter less than first, then first parameter is returned.
-`date(format[, timestamp]) (volatile) | formats date/time into a string ([see](http://php.net/manual/en/function.date.php))
+`date(format[, timestamp])` (volatile) | formats date/time into a string ([see](http://php.net/manual/en/function.date.php))
 
 **NOTES:**
-* Some function names are different from names of corresponding functions in php. It made to compatiblity to such expression parsers made on other languages.
+* Some function names are different from names of corresponding functions in php. It made to compatibility to such expression parsers made on other languages.
 * `ln` and `log` functions are both aliases for php's [log function](http://php.net/manual/en/function.log.php), and therefore share the functionality with optional second parameter. But it is recommended to use `ln` for natural logarithm, and `log` for base-specified.
 
 
@@ -154,9 +154,9 @@ Supports:
 * Implicit string concatenation (expressions without operators in between are considered as a concatenation of their string values)
 * Parentheses
 
-**NOTE:** division and reminder operation handles the case, when second operand is zero, passing INF, -INF or NAN as a result. It made to avoid runtime warnings, if expression has division by zero
+**NOTE:** division and reminder operation handle the case, when the second operand is zero, passing INF, -INF or NAN as a result. It made to avoid runtime warnings if the expression has division by zero
 
-Numeric constants starts with digit and can contain decimal point.
+Numeric constants start with a digit and can contain the decimal point.
 String constants are enclosed in single or double quotes (`'` or `"`). To escape the quotes symbol itself it can be typed twice.
 Identifiers contain letters or underscore, and can contain digits (except for first char) 
 
@@ -166,7 +166,7 @@ Priority of operations (from highest to lowest):
 1. Implicit **string concatenation** (if no operators between expressions);
 1. Powers (`^` or `**`);
 1. Multiplications, divisions, reminders (`*`, '/', '%');
-1. Additions and substrations (`+`, '-')
+1. Additions and subtractions (`+`, '-')
 1. Comparisons (`=`, `<>` or `!=`, `>`, `>=`, `<`, `<=`)
 1. Logical and (`&`)
 1. Logical or (`|`)
@@ -174,13 +174,13 @@ Priority of operations (from highest to lowest):
 1. Ternary conditional operators
 
 **NOTE:** Conditional operator has the lowest priority. That means the whole expression at it's left will be considered as a condition
-and whole expression after colon `:` will be considered as `else` block. This allows you to stack several ternary operators forming selectors:
+and the whole expression after colon `:` will be considered as `else` block. This allows you to stack several ternary operators forming selectors:
 `condition1 ? variant1 : condition2 ? variant2 : ...  conditionN ? variantN : elsevariant`
 
 
 # Usage
 
-At the compile time it may throw `SimpleExpressionParseError` exception, which has method `getPosition()` to return a position of the error
+At the compile time, it may throw `SimpleExpressionParseError` exception, which has the method `getPosition()` to return a position of the error
 
 ```php
   $expression = "x ^ 2 + sqrt(y) * 4"; 
@@ -216,7 +216,7 @@ It may lead to some unwanted situations.
 
 Consider two expressions: "`sin(x)`" and "`sinus(x)`". 
 
-The first one (considering fuction `sin` is declared in the context) will be compiled as a function call with value of variable `x` passed as the parameter.
+The first one (considering function `sin` is declared in the context) will be compiled as a function call with a value of variable `x` passed as the parameter.
 The second one (considering function `sinus` is not declared) will be silently compiled as a string concatenation of variables `sinus` and `x`.
 
 To avoid such mistakes, you can check all variable names that were used in the expression.
@@ -232,20 +232,20 @@ If the expression references some unlisted variable, the `SimpleExpressionParseE
     $se->checkVars($vars); // Exception will be thrown, since `sinus` is unknown variable name
 ```
 
-## Case insensetive
+## Case insensitive
 
-**NOTE:** expression is case insensetive. All variable names are turned into the lower case. 
+**NOTE:** expression is case insensitive. All variable names are turned into the lower case. 
 So, array passed to `run` method should have keys in lower case
 
 ## Optimizations
 
-At the compile time some optimizations may be performed.
+At the compile time, some optimizations may be performed.
 
-Once and most important optimization is precalculation of constant expressions. for example in expression `sin(PI / 2)` (considering usage of default context) at the compile-time, PI will replaced by the constant value, then PI / 2 expression is calculated, then sin function performed. Returned value will be stored as a constant in the resulting expression, avoiding recalculation of the same expression on each run.
+Once and most important optimization is precalculation of constant expressions. for example in the expression `sin(PI / 2)` (considering the usage of default context) at the compile-time, PI will be replaced by the constant value, then `PI / 2` expression is calculated, then sin function performed. The returned value will be stored as a constant in the resulting expression, avoiding recalculation of the same expression on each run.
 
-Some less obvious optimizations also can be peformed. Such as combining successive concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
+Some less obvious optimizations also can be performed. Such as combining successive concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
 
-To check how optimizations were done, you can use `debugDump()` method of a `SimpleExpression`. It will return textual representation of evaluation tree. 
+To check how optimizations were done, you can use `debugDump()` method of a `SimpleExpression`. It will return a textual representation of evaluation tree. 
 
 ```php
   $s = "(PI > 3) ? sin(x * 2 * PI) : sqrt(y)"; 
@@ -256,4 +256,4 @@ will output `@sin(({x} * (const 6.2831853071796)))`
 
 In this string `@` means function call; `{...}` - variable access; `(const ...)` - constant node.
 
-Here, PI is a constant, which is greater than 3, so whole coditional expression is replaced by it's "if_true" part, where named constant is replaced by it's value and two constant-on-the-right multiplications `* 2 * PI` are combined into a single one. 
+Here, PI is a constant, which is greater than 3, so the whole conditional expression is replaced by it's "if_true" part, where named constant is replaced by its value and two constant-on-the-right multiplications `* 2 * PI` are combined into a single one. 
