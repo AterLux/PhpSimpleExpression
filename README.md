@@ -1,9 +1,13 @@
 # PhpSimpleExpression
+
+*Читайте также [это же описание на русском языке](README.ru.md)*
+
 This is a simple expression parser and evaluator for PHP.
+It can be used to calculate simple formulae or string substitutions, provided by a user
 
 **Requires PHP 5.3 or greater**
 
-It utilizes function enclosures (which are introduced in PHP 5.3) to evaluate expressions really fast, without using `eval` and keeping the user-entered code safely isolated.
+It utilizes function closures (which were introduced in PHP 5.3) to evaluate expressions fast, but, in the same time, without using `eval` and keeping the user-entered code safely isolated.
 
 It implements model "compile once - evaluate multiple times". The same expression can be evaluated against different variable values hundreds of thousands of times per second.
 
@@ -11,7 +15,7 @@ It works in two modes:
 
 ## Single Expression Mode
 
-This is the default mode. In this mode, the input string is passed as a single expression. 
+This is the default mode. In this mode, the input string is parsed as a single expression. 
 For example: `x ^ 2 + sqrt(y) * 4`
 
 ```php
@@ -38,17 +42,18 @@ For example: `I have [num_of_carrot] carrot[num_of_carrot != 1 ? 's'], [num_of_a
   $vars = array(
     'num_of_carrot' => 20,
     'num_of_apple' => 1,
-    'num_of_banana' => 5
+    'num_of_banana' => 3
    );
 
   print $se->run($vars) . PHP_EOL; // I have 20 carrots, 1 apple, 5 bananas
 ```
+*In Russian the expression may look a bit more complicated: `$expression = "У меня есть [num_of_carrot] морков[num_of_carrot % 100 >= 10 & num_of_carrot % 100 < 20 | num_of_carrot % 10 >= 5 | num_of_carrot % 10 = 0 ? 'ок' : num_of_carrot > 1 ? 'ки' : 'ка'], [num_of_apple] яблок[num_of_apple % 100 >= 10 & num_of_apple % 100 < 20 | num_of_apple % 10 >= 5 | num_of_apple % 10 = 0 ? '' : num_of_apple > 1 ? 'а' : 'о'], [num_of_banana] банан[num_of_banana % 100 >= 10 & num_of_banana % 100 < 20 | num_of_banana % 10 >= 5 | num_of_banana % 10 = 0 ? 'ов' : num_of_banana > 1 ? 'а']";`*
 
 
-## Contexts
+## Contexts (class SimpleContext)
 
-Class `SimpleContext` contains information about functions and named constants which can be used in the expression.
-Contexts can be stacked in the tree-like structure, so, if function or variable is not found in a particular context it will be looked for in the parent context, and so on.
+Class `SimpleContext` contains information about functions and named constants which can be used in expressions.
+Contexts can be stacked in the hierarchial tree-like structure, so, if function or constant is not found in a particular context it will be looked for in the parent context, and so on.
 
 There is a singleton default context, which defines some useful functions and also PI constant. It possible to obtain it like this: `SimpleContext::getDefaultContext()`
 
@@ -58,7 +63,10 @@ It could be achieved in several ways:
 ```php
 $default_context = SimpleContext::getDefaultContext();
 $my_context = new SimpleContext($default_context); // Parent context could be passed as a parameter into SimpleContext constructor.
+
 $my_context = new SimpleContext(true); // If boolean `true` is passed, then default context will be used as a parent
+
+$default_context = SimpleContext::getDefaultContext();
 $my_context = $default_context->derive(); // Or method `derive` on the context will create a new context with this context set as a parent
 ```
 To create a root context omit the parameter, or pass NULL: `$my_context = new SimpleContext();`
@@ -71,9 +79,9 @@ $my_context->registerConstant('THETA', 0.000001); // registerConstant method all
 
 $my_context->registerConstants(array('MAX_WIDTH' => 128, 'MAX_HEIGHT' => 64)); // registerConstants accepts an array to register multiple constants at once
 ```
-To remove a constant you can use `unregisterConstant` method. Pass a constant name, or array of multiple names, or '*' string to remove all.
+To remove a constant you can use `unregisterConstant` method. Pass a constant name, or array of multiple names, or '&ast;' string to remove all from the current context. Note: this operation does not affect the parent contexts.
 
-**NOTE** `NULL` can be registered in the context, but at the compile time will be considered as non-declared, and therefore replaced by an operation of accessing a variable of the same name.
+**NOTE** a constant with `NULL` value can be registered in the context, but at the compile time will be considered as non-declared, and therefore replaced by an operation of accessing a variable of the same name.
 You can use `NULL` to suppress unwanted constants, declared in the parent context, if their names are required as variable names.
 
 ### Functions
@@ -81,16 +89,22 @@ You can use `NULL` to suppress unwanted constants, declared in the parent contex
 You can declare custom functions to be used in expressions.
 
 To register a function you can use `registerFunction(function[, alias[, is_volatile]])` method. 
-`function` can be name or function or function enclosure.
-`alias` can be used to set make the function accessible by an alternative name from a script.
-set `is_volatile` to true, if the function has side-effects, i.e. it can return different values with the same parameters. `rand`, `date` - are examples of such functions.
+`function` can be name or function or function closure.
+`alias` can be used to set make the function accessible by an alternative name from an expression.
+set `is_volatile` to `true`, if the function has side-effects, i.e. it can return different values with the same parameters. `rand`, `date` - are examples of such functions.
 Otherwise, if only constant parameters passed to the function, it will be calculated and replaced by a constant on the compile-time.
 
 ```php
+  function my_func($a, $b) {
+    return $a - $b * 2;
+  }
+
   $my_context->registerFunction('my_func'); // Simple way to register a function is to pass it's name to `registerFunction`;
 
   // Passing a closure
-  $f = function($x) { return $x * $x * 2; }; 
+  $f = function($x) { 
+    return $x * $x * 2; 
+  }; 
   $my_context->registerFunction($f, 'second_func'); // Register the function closure by a specified alias
 
   $my_context->registerFunction('time', 'get_time', true); // Register a volatile function with alternative alias
@@ -98,9 +112,9 @@ Otherwise, if only constant parameters passed to the function, it will be calcul
 
 You also can use `registerFunctions(array[, is_volatile])` method to register multiple functions at once. If key of array item is not numerical, then it is used as an alias.
 
-To unregister functions use `unregisterFunction` method. The alias, array of multiple aliases or '*' to remove all can be passed.
+To unregister functions use `unregisterFunction` method. The alias, array of multiple aliases or '&ast;' to remove all can be passed.
 
-**NOTE:** At the compile time, all named constants replaced by its values, and functions calls replaced by corresponding `ReflectionFunction`. So, altering the context after the expression is compiled will not have any effect on the compiled expression.
+**NOTE:** At the compile time, all named constants replaced by its values, and functions calls replaced by corresponding `ReflectionFunction`. No information about the used context is stored. So, altering the context after the expression is compiled will not have any effect on the compiled expression.
 
 ### Default Context
 
@@ -121,18 +135,21 @@ Function alias | Comment
 `floor(x)` | Round down to integer
 `ceil(x)` | Round up to integer
 `round(x[, precision])` | Round to closest value ([see](http://php.net/manual/en/function.round.php))
-`ln(x)` | Natural logarithm (See notes)
+`exp(x)`| Exponent
+`sqrt(x)`| Square root
+`hypot(x, y)` | Hypotenuse (Square root of sum of squares)
+`ln(x)` | Natural logarithm (see notes)
 `log(x, base)` | Logarithm by arbitrary base (see notes)
 `lg(x)`, `log10(x)` | Logarithm by base 10 ([see](http://php.net/manual/en/function.log10.php))
 `min(...)` | Lowest value of multiple arguments
 `max(...)` | Highest value of multiple arguments
-`substr(string, start[, length])` | substring ([see](http://php.net/manual/en/function.substr.php))
+`substr(string, start[, length])` | Substring ([see](http://php.net/manual/en/function.substr.php))
 `strlen(string)` | Length of the string
 `upper(string)` | Uppercase of the string ([see](http://php.net/manual/en/function.strtoupper.php))
 `lower(string)` | Lowercase of the string ([see](http://php.net/manual/en/function.strtolower.php))
 `replace(search, replace, subject)` | Replaces occurrences of search string in the subject ([See](http://php.net/manual/en/function.str-replace.php))
-`regexp(pattern, subject)` | performs a regular expression match (Uses php's [preg_match](http://php.net/manual/en/function.preg-match.php))
-`regexp_replace(pattern, replacement, subject[, limit])` | performs a regular expression-based replace (Uses php's [preg_replace](http://php.net/manual/en/function.preg-replace.php))
+`regexp(pattern, subject)` | Performs a regular expression match (Uses php's [preg_match](http://php.net/manual/en/function.preg-match.php))
+`regexp_replace(pattern, replacement, subject[, limit])` | Performs a regular expression-based replace (Uses php's [preg_replace](http://php.net/manual/en/function.preg-replace.php))
 `number_format(number[, decimals[, dec_point, thousands_sep]])` | Formats a number ([See](http://php.net/manual/en/function.number-format.php))
 `format(format, ...)` | Formats a string (Uses php's [sprintf](http://php.net/manual/en/function.sprintf.php))
 `random([a[, b]])` (volatile) | Returns random number: 1) if no parameters, then float number not less than 0 but less than 1; 2) if one parameter, then integer less than this number, but not less than zero; 3) if two parameters then integer between first and second, inclusive. if second parameter less than first, then first parameter is returned.
@@ -153,6 +170,9 @@ Supports:
 * Ternary conditional operator <condition> `?` <expression_if_true> [`:` <expression_if_false>] (If 'false' part is omited, it considered as an empty string)
 * Implicit string concatenation (expressions without operators in between are considered as a concatenation of their string values)
 * Parentheses
+* Function calls
+* Named constants
+* Variable access
 
 **NOTE:** division and reminder operation handle the case, when the second operand is zero, passing INF, -INF or NAN as a result. It made to avoid runtime warnings if the expression has division by zero
 
@@ -171,7 +191,7 @@ Priority of operations (from highest to lowest):
 1. Logical and (`&`)
 1. Logical or (`|`)
 1. Logical exclusive or (`^^`)
-1. Ternary conditional operators
+1. Ternary conditional operator
 
 **NOTE:** Conditional operator has the lowest priority. That means the whole expression at it's left will be considered as a condition
 and the whole expression after colon `:` will be considered as `else` block. This allows you to stack several ternary operators forming selectors:
@@ -211,7 +231,7 @@ At the compile time, it may throw `SimpleExpressionParseError` exception, which 
 
 ## Implicit variable access
 
-*NOTE:* All unknown identifiers will be treated as a variable access at the compile time, but at the runtime, all non-existent variables will be silently treated as `NULL`s.
+**NOTE:** All unknown identifiers will be treated as a variable access at the compile time, but at the runtime, all non-existent variables will be silently treated as `NULL`s.
 It may lead to some unwanted situations.
 
 Consider two expressions: "`sin(x)`" and "`sinus(x)`". 
@@ -219,8 +239,8 @@ Consider two expressions: "`sin(x)`" and "`sinus(x)`".
 The first one (considering function `sin` is declared in the context) will be compiled as a function call with a value of variable `x` passed as the parameter.
 The second one (considering function `sinus` is not declared) will be silently compiled as a string concatenation of variables `sinus` and `x`.
 
-To avoid such mistakes, you can check all variable names that were used in the expression.
-You can obtain their list by calling method `getVars()` of the SimpleExpression object. 
+To avoid such mistakes, it is possible to check all variable names that were used in the expression.
+Their list can be obtained by calling method `getVars()` of the SimpleExpression object. 
 It will return an array, which keys represent variable names, and values show the position in the expression, where the variable was referenced for the first time.
 But to simplify checking process it is possible to use `checkVars(array)` method. Pass an array which keys list all allowed variable names. 
 If the expression references some unlisted variable, the `SimpleExpressionParseError` exception will be thrown.
@@ -241,9 +261,9 @@ So, array passed to `run` method should have keys in lower case
 
 At the compile time, some optimizations may be performed.
 
-Once and most important optimization is precalculation of constant expressions. for example in the expression `sin(PI / 2)` (considering the usage of default context) at the compile-time, PI will be replaced by the constant value, then `PI / 2` expression is calculated, then sin function performed. The returned value will be stored as a constant in the resulting expression, avoiding recalculation of the same expression on each run.
+One and most important optimization is precalculation of constant expressions. for example in the expression `sin(PI / 2)` (considering the usage of default context) at the compile-time, `PI` will be replaced by the constant value, then `PI / 2` expression is calculated, then `sin` function performed. The returned value will be stored as a constant in the resulting expression, avoiding recalculation of the same expression on each run.
 
-Some less obvious optimizations also can be performed. Such as combining successive concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
+Some less obvious optimizations also can be performed. Such as combining of nested concatenations in a single, or combining math operands (e.g. `(x * 4) / 2` => `(x * 2)` etc.
 
 To check how optimizations were done, you can use `debugDump()` method of a `SimpleExpression`. It will return a textual representation of evaluation tree. 
 
