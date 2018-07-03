@@ -90,7 +90,7 @@
 
   $default_context = SimpleContext::getDefaultContext();
 
-  // Adding or removing functions or variables into/from there will affect all later expression compilations while the class is loaded.
+  // Adding or removing functions or constants into/from there will affect all later expression compilations while the class is loaded.
   // To use all the default functions, but not affecting the default context, we can create a new context, setting the default context as a parent.
   // It could be achieved in several ways:
   // $my_context = new SimpleContext($default_context); // Parent context could be passed as a parameter into SimpleContext constructor.

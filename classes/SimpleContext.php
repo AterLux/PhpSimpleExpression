@@ -1,7 +1,7 @@
 <?php
 /*************************************************************************************
  *
- *  SimpleExpression 1.0.0 (29.06.2018)
+ *  SimpleExpression 1.0.1
  *
  *  Copyright (C) 2018 Dmitry Pogrebnyak 
  *  (https://aterlux.ru/ dmitry@aterlux.ru)

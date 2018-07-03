@@ -1,7 +1,7 @@
 <?php
 /*************************************************************************************
  *
- *  SimpleExpression 1.0.0 (29.06.2018)
+ *  SimpleExpression 1.0.1
  *
  *  Copyright (C) 2018 Dmitry Pogrebnyak 
  *  (https://aterlux.ru/ dmitry@aterlux.ru)
@@ -867,7 +867,7 @@ class SimpleExpression {
     }
     while (!$tokenizer->isEol()) {
       $val = $tokenizer->getValue();
-      if (isset(self::$binary_op_priority[$val])) { // binary operation
+      if ($tokenizer->isOp() && isset(self::$binary_op_priority[$val])) { // binary operation
         $pr = self::$binary_op_priority[$val];
         if ($pr < $min_priority) {
           return $node;
@@ -879,7 +879,7 @@ class SimpleExpression {
         }
         $node = array(self::$proc[self::$binary_op_proc[$val]], $node, $rnode);
         self::simplifyBinary($node);
-      } elseif ($val === '?') { // Ternary conditional operator
+      } elseif ($tokenizer->isOp() && ($val === '?')) { // Ternary conditional operator
         if ($min_priority > 0) { // Exit from nested;
           return $node;
         }
