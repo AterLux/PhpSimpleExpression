@@ -1,7 +1,7 @@
 <?php
 /*************************************************************************************
  *
- *  SimpleExpression 1.0.1
+ *  SimpleExpression 1.1.0
  *
  *  Copyright (C) 2018 Dmitry Pogrebnyak 
  *  (https://aterlux.ru/ dmitry@aterlux.ru)
@@ -22,6 +22,21 @@
  *  along with SimpleExpression.  If not, see <https://www.gnu.org/licenses/>.
  *
  ***************************************************************************************/
+
+/* What's new
+ * ver 1.1.0:
+ *   + added # (explicit string concatenation) operator.
+ *   - implicit string concatenation (without operators) now disabled by default
+ *     it can be enabled in the SimpleContext (see SimpleContext::implicitConcatenation() method)
+ *   * conditional and boolean logic was changed. Now string '0' (also empty array) is considered as 'true'. NULL, false, 0, 0.0, '' are still 'false'
+ *   * & (or), | (and) and ^^ (exclusive or) are not boolean operators anymore. Their result depend on the operands types:
+ *       A | B  equals to  A ? A : B 
+ *       A & B  equals to  A ? B : A
+ *       A ^^ B equals to  !A ? B : (!B ? A : '')
+ *   * engine now has OR-chain processor which is used when construction A | B | C ... is detected, it returns the first true operand, or the last one if not a such.
+ *   + several new optimizations.
+ *   - (X * 0) => 0 optimization was removed to handle right NAN and INF values of the X expression
+ */
 
 /**
  * Exception risen on parse error
@@ -87,7 +102,7 @@ class SimpleExpressionTokenizer {
       return $this->value;
     }
 
-    if (!preg_match('#\G(?:(?P<op>[-+/%&|=\]()?:,]|\^\^?|\*\*?|<[=>]?|>=?|!=?)|(?P<num>[0-9]+(?P<num_frac>\.[0-9]*)?)|(?P<id>[A-Za-z_\x80-\xFF][A-Za-z0-9_\x80-\xFF]*)|(?P<str>"(?:[^"]|"")*|\'(?:[^\']|\'\')*))#s', $this->text, $res, 0, $this->pos)) {
+    if (!preg_match('#\G(?:(?P<op>[-+/%&|=\]()?:,\#]|\^\^?|\*\*?|<[=>]?|>=?|!=?)|(?P<num>[0-9]+(?P<num_frac>\.[0-9]*)?)|(?P<id>[A-Za-z_\x80-\xFF][A-Za-z0-9_\x80-\xFF]*)|(?P<str>"(?:[^"]|"")*|\'(?:[^\']|\'\')*))#s', $this->text, $res, 0, $this->pos)) {
       throw new SimpleExpressionParseError($this->pos, 'Unexpected symbol ' . $this->text[$this->pos]);
     }
     $this->pos += strlen($res[0]);
@@ -192,6 +207,17 @@ class SimpleExpressionTokenizer {
     return $this->tokenpos;
   }
 
+  public function getTypeName() {
+    switch ($this->type) {
+      case self::EOL: return 'end of line';
+      case self::ID: return 'identifier';
+      case self::OP: return 'operator';
+      case self::NUM: return 'numeric constant';
+      case self::STR: return 'string constant';
+    }
+    return 'symbol';
+  } 
+
   /**
    * Raises SimpleExpressionParseError with given text at current token position
    */
@@ -222,6 +248,7 @@ class SimpleExpression {
     '|' => 'or',
     '&' => 'and',
     '=' => 'eq', '!=' => 'neq', '<>' => 'neq', '>' => 'gt', '>=' => 'gte', '<' => 'lt', '<=' => 'lte',
+    '#' => 'concat', // not a binary op, but is handled specially
     '+' => 'add', '-' => 'sub',
     '*' => 'mul', '/' => 'div', '%' => 'mod',
     '^' => 'pow', '**' => 'pow'
@@ -236,9 +263,10 @@ class SimpleExpression {
     '|' => 2,
     '&' => 3,
     '=' => 4, '!=' => 4, '<>' => 4, '>' => 4, '>=' => 4, '<' => 4, '<=' => 4,
-    '+' => 5, '-' => 5,
-    '*' => 6, '/' => 6, '%' => 6,
-    '^' => 7, '**' => 7
+    '#' => 5,
+    '+' => 6, '-' => 6,
+    '*' => 7, '/' => 7, '%' => 7,
+    '^' => 8, '**' => 8
   );
 
 
@@ -259,9 +287,9 @@ class SimpleExpression {
     if (isset(self::$proc)) return;
     self::$proc  = array(
       // Unary operators
-      'castbool'=> function($data, $vars) { return $data[1][0]($data[1], $vars) ? true : false;  }, 
+      'castbool'=> function($data, $vars) { return ($data[1][0]($data[1], $vars) != '') ? true : false;  }, 
       'castnum' => function($data, $vars) { return $data[1][0]($data[1], $vars) + 0; }, 
-      'not'     => function($data, $vars) { return !($data[1][0]($data[1], $vars)); },
+      'not'     => function($data, $vars) { return ($data[1][0]($data[1], $vars) == ''); },
       'neg'     => function($data, $vars) { return -($data[1][0]($data[1], $vars)); },
 
       // Math
@@ -287,9 +315,19 @@ class SimpleExpression {
       'pow'     => function($data, $vars) { return pow($data[1][0]($data[1], $vars) , $data[2][0]($data[2], $vars)); },
 
       // Logic
-      'and'     => function($data, $vars) { return (($data[1][0]($data[1], $vars)) && ($data[2][0]($data[2], $vars))) ? true : false; },
-      'or'      => function($data, $vars) { return (($data[1][0]($data[1], $vars)) || ($data[2][0]($data[2], $vars))) ? true : false; },
-      'xor'     => function($data, $vars) { return (($data[1][0]($data[1], $vars)) xor ($data[2][0]($data[2], $vars))) ? true : false; },
+      'and'     => function($data, $vars) { $a = $data[1][0]($data[1], $vars); if ($a == '') return $a; else return $data[2][0]($data[2], $vars); },
+      'or'      => function($data, $vars) { $a = $data[1][0]($data[1], $vars); if ($a != '') return $a; else return $data[2][0]($data[2], $vars); },
+      'xor'     => function($data, $vars) {   // a ^^ b == !a ? b : (!b ? a : '')
+           $a = $data[1][0]($data[1], $vars); 
+           $b = $data[2][0]($data[2], $vars);   
+           if ($a == '') {                      
+             return $b;
+           } elseif ($b == '') {
+             return $a;
+           } else {
+             return ''; 
+           }
+         },
 
       // Comparison
       'eq'      => function($data, $vars) { return ($data[1][0]($data[1], $vars)) == ($data[2][0]($data[2], $vars)); },
@@ -301,7 +339,7 @@ class SimpleExpression {
 
       // Ternary conditional
       'condition' => function($data, $vars) {
-           if ($data[1][0]($data[1], $vars)) {
+           if ($data[1][0]($data[1], $vars) != '') {
              return $data[2][0]($data[2], $vars);
            } else {
              return $data[3][0]($data[3], $vars);
@@ -334,6 +372,15 @@ class SimpleExpression {
              $s .= $data[$i][0]($data[$i], $vars);
            }
            return $s;
+         },
+
+      'orchain' => function($data, $vars) {
+           $max = count($data) - 1;
+           for ($i = 1 ; $i < $max ; $i++) {
+             $v = $data[$i][0]($data[$i], $vars);
+             if ($v != '') return $v;
+           }
+           return $data[$max][0]($data[$max], $vars);
          }
 
     );
@@ -345,9 +392,7 @@ class SimpleExpression {
    */
   protected static function isExplicitBoolean($node) {
     $proc = $node[0];
-    if (($proc == self::$proc['and']) || ($proc == self::$proc['or']) ||
-        ($proc == self::$proc['xor']) || 
-        ($proc == self::$proc['castbool']) || ($proc == self::$proc['not']) ||
+    if (($proc == self::$proc['castbool']) || ($proc == self::$proc['not']) ||
         ($proc == self::$proc['eq']) || ($proc == self::$proc['neq']) ||
         ($proc == self::$proc['gt']) || ($proc == self::$proc['lt']) ||
         ($proc == self::$proc['gte']) || ($proc == self::$proc['lte'])) {
@@ -356,8 +401,18 @@ class SimpleExpression {
     if (($proc == self::$proc['constant']) && is_bool($node[1])) {
       return true;
     }
-    if (($proc == self::$proc['condition']) && self::isExplicitBoolean($node[2]) && self::isExplicitBoolean($node[3])) { 
-      return true; // Condition, which returns only booleans is boolean too
+    if ($proc == self::$proc['condition']) { // Condition, which returns only booleans is boolean too
+      return self::isExplicitBoolean($node[2]) && self::isExplicitBoolean($node[3]);
+    }
+    if (($proc == self::$proc['or']) || ($proc == self::$proc['and'])) { // | and & operators, which returns only booleans are boolean too
+      return self::isExplicitBoolean($node[1]) && self::isExplicitBoolean($node[2]);
+    }
+    if ($proc == self::$proc['orchain']) { // OR-chain made from booleans is boolean too
+      $c = count($node);
+      for ($i = 1 ; $i < $c ; $i++) {
+        if (!self::isExplicitBoolean($node[$i])) return false;
+      }
+      return true;
     }
     return false;
   }
@@ -377,8 +432,18 @@ class SimpleExpression {
     if (($proc == self::$proc['constant']) && is_numeric($node[1]) && !is_string($node[1])) {
       return true;
     }
-    if (($proc == self::$proc['condition']) && self::isExplicitNumeric($node[2]) && self::isExplicitNumeric($node[3])) { 
-      return true; // Condition, which returns only numbers is numeric too
+    if ($proc == self::$proc['condition']) { // Condition, which returns only numbers is numeric too
+      return self::isExplicitNumeric($node[2]) && self::isExplicitNumeric($node[3]);
+    }
+    if (($proc == self::$proc['or']) || ($proc == self::$proc['and'])) { // | and & operators, which returns only numbers are numeric too
+      return self::isExplicitNumeric($node[1]) && self::isExplicitNumeric($node[2]);
+    }
+    if ($proc == self::$proc['orchain']) { // OR-chain made from numerics is numerics too
+      $c = count($node);
+      for ($i = 1 ; $i < $c ; $i++) {
+        if (!self::isExplicitNumeric($node[$i])) return false;
+      }
+      return true;
     }
     return false;
   }
@@ -395,13 +460,74 @@ class SimpleExpression {
     if (($proc == self::$proc['constant']) && is_string($node[1])) {
       return true;
     }
-    if (($proc == self::$proc['condition']) && self::isExplicitString($node[2]) && self::isExplicitString($node[3])) { 
-      return true; // Condition, which returns only string is string too
-    }
+    if ($proc == self::$proc['condition']) { // Condition, which returns only strings is string too 
+      return self::isExplicitString($node[2]) && self::isExplicitString($node[3]); 
+    } 
+    if (($proc == self::$proc['or']) || ($proc == self::$proc['and']) || ($proc == self::$proc['xor'])) {
+      // |, & and ^^ operators, which returns only strings are string too  
+      return self::isExplicitString($node[1]) && self::isExplicitString($node[2]);
+   }
     return false;
   }
 
 
+  /** 
+   * Checks, if the node always returns a result, which is, when converted to boolean, evaluates to $result
+   * @param $node - node of the parsed expression tree
+   * @param $result expected boolean result;
+   * @return true if condition is fulfiled
+   */
+  protected static function checkBoolResult($node, $result) {
+    $proc = $node[0];
+    if ($proc == self::$proc['constant']) { // Check constant
+      if ($result) {
+        return $node[1] != '';
+      } else {
+        return $node[1] == '';
+      }
+    }
+    // Check condition results
+    if ($proc == self::$proc['condition']) {
+      return self::checkBoolResult($node[2], $result) && self::checkBoolResult($node[2], $result);
+    }
+    // If any node of concat always gives non-empty string (which is equals to the true boolean result) then the whole concat is true
+    if ($proc == self::$proc['concat']) {
+      if ($result) {
+        for ($i = 1, $c = count($node) ; $i < $c ; $i++) {
+          if (self::checkBoolResult($node[$i], true)) return true;
+        }
+      }
+      return false;
+    }
+    // If the latest node of the OR-chain gives always true then the whole chain is true;
+    if ($proc == self::$proc['orchain']) {
+      if ($result) {
+        return self::checkBoolResult($node[count($node) - 1], true);
+      }
+      return false;
+    }
+    // X | true => always true (true | X is processed by the node optimization)
+    if ($proc == self::$proc['or']) {
+      if ($result) {
+        return self::checkBoolResult($node[2], true);
+      }
+      return false;
+    }
+    // X & false => always false (false & X is processed by the node optimization)
+    if ($proc == self::$proc['and']) {
+      if (!$result) {
+        return self::checkBoolResult($node[2], false);
+      }
+      return false;
+    }
+    // exclusive or 
+    if ($proc == self::$proc['xor']) {
+      return (self::checkBoolResult($node[1], false) && self::checkBoolResult($node[2], $result)) ||
+             (self::checkBoolResult($node[1], true) && self::checkBoolResult($node[2], !$result));
+    }
+
+    return false;
+  }
   /**
    * Performs some optimizations on unary-operation nodes. Modifies $node, if neccessary
    * @param $node - node of the parsed expression tree
@@ -422,7 +548,13 @@ class SimpleExpression {
       }
     }
     if ($proc == self::$proc['castbool']) {
-      if (self::isExplicitBoolean($node[1])) { // Remove cast of operation that explicitly returns a boolean
+      if (self::checkBoolResult($node[1], true)) {  // If the node gives always true or false boolean, then replace it by a constant
+        $node = array($constant_proc, true);
+        return;
+      } elseif (self::checkBoolResult($node[1], false)) {
+        $node = array($constant_proc, false);
+        return;
+      } elseif (self::isExplicitBoolean($node[1])) { // Remove cast of operation that explicitly returns a boolean
         $node = $node[1];
         return;
       }
@@ -432,6 +564,12 @@ class SimpleExpression {
       if ($rpr == self::$proc['not']) { 
         $node = array(self::$proc['castbool'], $node[1][1]);
         self::simplifyUnary($node);
+        return;
+      } elseif (self::checkBoolResult($node[1], true)) {  // If the node gives always true or false boolean, then replace it by a constant
+        $node = array($constant_proc, false);
+        return;
+      } elseif (self::checkBoolResult($node[1], false)) {
+        $node = array($constant_proc, true);
         return;
       } elseif (($rpr == self::$proc['eq']) || ($rpr == self::$proc['neq']) || ($rpr == self::$proc['gt']) ||
                 ($rpr == self::$proc['gte']) || ($rpr == self::$proc['lt']) || ($rpr == self::$proc['lte'])) {
@@ -540,6 +678,76 @@ class SimpleExpression {
   }
 
   /**
+   * Performs some optimizations on an or-chain node. Modifies $node, if neccessary
+   * @param $node - node of the parsed expression tree
+   */
+  protected static function simplifyOrChain(&$node) {
+    $constant_proc = self::$proc['constant'];
+
+    $c = count($node);
+    if ($c == 2) {
+      $node = $node[1];
+      return;
+    } elseif ($c == 3) {
+      $node[0] = self::$proc['or'];
+      return;
+    }
+    $reorganize = false;
+    for ($i = 1 ; $i < $c ; $i++) {
+      $n = $node[$i];
+      if (($n[0] == self::$proc['or']) || ($n[0] == self::$proc['orchain']) ||
+          (($n[0] == $constant_proc) && $i != ($c - 1))) {
+        $reorganize = true;
+        break;
+      } 
+    }
+    if (!$reorganize) return;
+    $a = array(self::$proc['orchain']);
+    $extend_const = NULL;
+    for ($i = 1 ; $i < $c ; $i++) {
+      $n = $node[$i];
+      if ($n[0] == $constant_proc) {
+        $extend_const = $n;
+        if ($n[1] != '') break;
+      } else {
+        $extend_const = NULL;
+        if ($n[0] == self::$proc['or']) {
+          $a[] = $n[1];
+          if ($n[2][0] == $constant_proc) {
+            $extend_const = $n[2];
+            if ($extend_const[1] != '') break;
+          } else {
+            $a[] = $n[2];
+          }
+        } elseif ($n[0] == self::$proc['orchain']) {
+          $cc = count($n);
+          for ($j = 1; $j < $cc ; $j++) {
+            $nc = $n[$j];
+            if ($nc[0] == $constant_proc) {
+              $extend_const = $nc;
+              if ($nc[1] != '') break;
+            } else {
+              $a[] = $nc;
+            }
+          }
+          if (isset($extend_const) && ($extend_const[1] != '')) break;
+        } else {
+          $a[] = $n;
+        }
+      }
+    }
+    if (isset($extend_const)) $a[] = $extend_const;
+    if (count($a) == 2) {
+      $node = $a[1];
+      return;
+    }
+    if (count($a) == 3) {
+      $a[0] = self::$proc['or'];
+    }
+    $node = $a;
+  }
+
+  /**
    * Performs some optimizations on arithmetical, logical operations, comparisons etc. I.e. operation of two arguments.
    * Modifies $node, if neccessary
    * @param $node - node of the parsed expression tree
@@ -553,6 +761,44 @@ class SimpleExpression {
       if ($node[2][0] == self::$proc['castnum']) $node[2] = $node[2][1];
     }
 
+    if ($proc == self::$proc['or']) {
+      if ($node[1][0] == self::$proc['or']) {
+        $node = array(self::$proc['orchain'], $node[1][1], $node[1][2], $node[2]);
+        self::simplifyOrChain($node);
+        return;
+      } elseif ($node[1][0] == self::$proc['orchain']) {
+        $node[1][count($node[1])] = $node[2];
+        $node = $node[1];
+        self::simplifyOrChain($node);
+        return;
+      } elseif ($node[2][0] == self::$proc['or']) {
+        $node = array(self::$proc['orchain'], $node[1], $node[2][1], $node[2][2]);
+        self::simplifyOrChain($node);
+        return;
+      } elseif ($node[2][0] == self::$proc['orchain']) {
+        $chain = array(self::$proc['orchain'], $node[1]);
+        $c = count($node[2]);
+        for ($i = 1 ; $i < $c ; $i++) {
+          $a[] = $node[2][$i];
+        }
+        $node = $chain;
+        self::simplifyOrChain($node);
+        return;
+      } elseif (self::checkBoolResult($node[1], false)) { // if the left node always gives false, then return only the right node
+        $node = $node[2];
+        return;
+      }
+    } elseif ($proc == self::$proc['and']) {
+      if (self::checkBoolResult($node[1], true)) { // if the left node always gives true, then return only the right node
+        $node = $node[2];
+        return;
+      }
+    } elseif ($proc == self::$proc['xor']) {
+      if (self::checkBoolResult($node[1], true) && self::checkBoolResult($node[2], true)) { // if both nodes give true then empty string is returned
+        $node = array($constant_proc, '');
+        return;
+      }
+    }
     // If left operand is a constant
     if ($node[1][0] == $constant_proc) {
       // If both operands are constants, then just perfom the expression to calculate the result as a new constant
@@ -564,25 +810,24 @@ class SimpleExpression {
 
       $lval = $node[1][1];
       if ($proc == self::$proc['and']) { 
-        if ($lval) { // (true & X) => (bool)X;  
-          $node = array(self::$proc['castbool'], $node[2]);
-          self::simplifyUnary($node);
+        if ($lval != '') { // (true & X) => (bool)X;  
+          $node = $node[2];
         } else {  // (false & anything) => false;
-          $node = array($constant_proc, false);
+          $node = $node[1];
         }
         return;
       } elseif ($proc == self::$proc['or']) { 
-        if ($lval) {  // (true | anything) => true;
-          $node = array($constant_proc, true);
+        if ($lval != '') {  // (true | anything) => true;
+          $node = $node[1];
         } else { // (false | X) => (bool)X;
-          $node = array(self::$proc['castbool'], $node[2]);
-          self::simplifyUnary($node);
+          $node = $node[2];
         }
         return;
       } elseif ($proc == self::$proc['xor']) { 
-        // (true ^^ X) => !X ; (false ^^ X) => (bool)X
-        $node = array($lval ? self::$proc['not'] : self::$proc['castbool'], $node[2]);
-        self::simplifyUnary($node);
+        // (false ^^ X) => X
+        if ($lval == '') {  
+          $node = $node[2];
+        }
         return;
       } elseif (($proc == self::$proc['add']) || ($proc == self::$proc['sub'])) {
         if ($lval == 0) {  // (0 + X) -> (num)(X) ; (0 - X) -> (-X)
@@ -603,15 +848,12 @@ class SimpleExpression {
           self::simplifyBinary($node);
           return;
         }
-      } else if ($proc == self::$proc['mul'])  {
+      } elseif ($proc == self::$proc['mul'])  {
         if ($lval == 1) {  // (1 * X) -> (num)(X)
           $node = array(self::$proc['castnum'], $node[2]);
           self::simplifyUnary($node);
           return;
-        } else if ($lval == 0) {  // (0 * X) -> 0
-          $node = $node[1];
-          return;
-        }
+        } // (0 * X) => 0 optimization was removed to keep handling right NAN and INF numbers
         $rnode = $node[2];
         if ((($rnode[0] == self::$proc['mul']) || ($rnode[0] == self::$proc['div'])) && ($rnode[1][0] == $constant_proc)) {
           // const1 * (const2 */ X) =>  (const1 * const2) */ X
@@ -620,32 +862,21 @@ class SimpleExpression {
           self::simplifyBinary($node);
           return;
         }
-      }
+      } elseif (($proc == self::$proc['eq']) || ($proc == self::$proc['neq'])) {
+        if ($lval === '') {   // '' = X  => !X    '' <> X => (bool)X
+          $node = array(($proc == self::$proc['eq']) ? self::$proc['not'] : self::$proc['castbool'], $node[2]);
+          self::simplifyUnary($node);
+          return;
+        }
+      } 
     }     
     // If right operand is a constant
     if ($node[2][0] == $constant_proc) {
       $rval = $node[2][1];
 
-      if ($proc == self::$proc['and']) { 
-        if ($rval) { // (true & X) => (bool)X
-          $node = array(self::$proc['castbool'], $node[1]);
-          self::simplifyUnary($node);
-        } else { // (anything & false) => false;
-          $node = array($constant_proc, false);
-        }
-        return;
-      } elseif ($proc == self::$proc['or']) { 
-        if ($rval) {  // (anything | true) => true;
-          $node = array($constant_proc, true);
-        } else { // (false | X) => (bool)X;
-          $node = array(self::$proc['castbool'], $node[1]);
-          self::simplifyUnary($node);
-        }
-        return;
-      } elseif ($proc == self::$proc['xor']) { 
-        // (X ^^ true) => !X ; (X ^^ false) => (bool)X
-        $node = array($rval ? self::$proc['not'] : self::$proc['castbool'], $node[1]);
-        self::simplifyUnary($node);
+      if ($proc == self::$proc['xor']) { 
+        // (X ^^ false) => X;
+        if ($rval == '') $node = $node[1];
         return;
       } elseif (($proc == self::$proc['add']) || ($proc == self::$proc['sub'])) {
         $lnode = $node[1];
@@ -669,10 +900,7 @@ class SimpleExpression {
           $node = array(self::$proc['castnum'], $node[1]);
           self::simplifyUnary($node);
           return;
-        } elseif (($rval == 0) && ($proc == self::$proc['mul'])) { // (X * 0) => 0
-          $node = $node[2];
-          return;
-        }
+        } // (X * 0) => 0 optimization was removed to keep handling right NAN and INF numbers
         $lnode = $node[1];
         // ((X */ const1) */ const2) => X */ (const1 */ const2)
         if ((($lnode[0] == self::$proc['mul']) || ($lnode[0] == self::$proc['div'])) && ($lnode[2][0] == $constant_proc)) {
@@ -706,6 +934,12 @@ class SimpleExpression {
           self::simplifyBinary($node);
           return;
         } 
+      } elseif (($proc == self::$proc['eq']) || ($proc == self::$proc['neq'])) {
+        if ($rval === '') {  // X = ''  => !X    X <> '' => (bool)X
+          $node = array(($proc == self::$proc['eq']) ? self::$proc['not'] : self::$proc['castbool'], $node[1]);
+          self::simplifyUnary($node);
+          return;
+        }
       }
     }
     // If not constants
@@ -734,12 +968,11 @@ class SimpleExpression {
     $constant_proc = self::$proc['constant'];
     $proc = $node[0];
     if ($proc == self::$proc['condition']) {
-      if ($node[1][0] == $constant_proc) {
-        if ($node[1][1]) {
-          $node = $node[2];
-        } else {
-          $node = $node[3];
-        }
+      if (self::checkBoolResult($node[1], true)) { // if expression always returns true, then just take the "if true" node
+        $node = $node[2];
+        return;
+      } elseif (self::checkBoolResult($node[1], false)) { // the same for false
+        $node = $node[3];
         return;
       }
       if ($node[2] === $node[3]) { // If result the same whatever happened...
@@ -755,6 +988,17 @@ class SimpleExpression {
         $node[2] = $node[3];
         $node[3] = $t;
       }
+      if ($node[1] === $node[2]) { // A ? A : B =>  A | B
+        $node = array(self::$proc['or'], $node[1], $node[3]);
+        self::simplifyBinary($node);
+        return;
+      }
+      if ($node[1] === $node[3]) { // A ? B : A =>  A & B
+        $node = array(self::$proc['and'], $node[1], $node[2]);
+        self::simplifyBinary($node);
+        return;
+      }
+
     }
   }
 
@@ -790,7 +1034,7 @@ class SimpleExpression {
           if ($expr[0] != $constant_proc) $all_const = false;
         } while ($tokenizer->getValue() === ',');
         if ($tokenizer->getValue() != ')') {
-          $tokenizer->parseError('Excpected closing parenthesis or comma');
+          $tokenizer->parseError('Expected closing parenthesis or comma');
         }
         $tokenizer->next();
         $num_params = (count($node) - 2);
@@ -867,7 +1111,7 @@ class SimpleExpression {
     }
     while (!$tokenizer->isEol()) {
       $val = $tokenizer->getValue();
-      if ($tokenizer->isOp() && isset(self::$binary_op_priority[$val])) { // binary operation
+      if (isset(self::$binary_op_priority[$val])) { // binary operation
         $pr = self::$binary_op_priority[$val];
         if ($pr < $min_priority) {
           return $node;
@@ -877,9 +1121,19 @@ class SimpleExpression {
         if ($rnode === false) {
           $tokenizer->parseError('Expected expression at the right side of ' . $val . ' operator');
         }
-        $node = array(self::$proc[self::$binary_op_proc[$val]], $node, $rnode);
-        self::simplifyBinary($node);
-      } elseif ($tokenizer->isOp() && ($val === '?')) { // Ternary conditional operator
+        $proc_name = self::$binary_op_proc[$val];
+        if ($proc_name == 'concat') {
+          if ($node[0] == self::$proc['concat']) {
+            $node[] = $rnode;
+          } else {
+            $node = array(self::$proc['concat'], $node, $rnode);
+          }
+          self::simplifyConcat($node);
+        } else {
+          $node = array(self::$proc[$proc_name], $node, $rnode);
+          self::simplifyBinary($node);
+        }
+      } elseif ($val === '?') { // Ternary conditional operator
         if ($min_priority > 0) { // Exit from nested;
           return $node;
         }
@@ -895,6 +1149,9 @@ class SimpleExpression {
         self::simplifyTernary($node);
         break;
       } else { // Trying to parse a value to make a string concatenation
+        if ($context && !$context->implicitConcatenation()) {
+          return $node; // if option is disabled, just return
+        }
         $rval = $this->parseValue($tokenizer, $context);
         if ($rval === false) { // Not a value;
           return $node;
@@ -955,7 +1212,7 @@ class SimpleExpression {
 
       $this->runtree = $this->parseExpression($tok, $context);
       if (!$tok->isEol()) {
-        $tok->parseError('Unexpected symbol: ' . $tok->getValue());
+        $tok->parseError('Unexpected ' . $tok->getTypeName() . ': ' . $tok->getValue());
       }
     }
 
@@ -984,7 +1241,7 @@ class SimpleExpression {
   /**
    * Dumps one node
    */
-  private function _debug_dump_node($node) {
+  private static function _debug_dump_node($node) {
     $nm = self::_find_proc_key($node[0]);
     switch ($nm) {
       case 'constant': 
@@ -999,32 +1256,32 @@ class SimpleExpression {
         } else {
           return '(const ' . gettype($node[1]) . ' ' . $node[1] . ')';
         }
-      case 'castbool': return '(BOOL)' . $this->_debug_dump_node($node[1]);
-      case 'castnum': return '(NUM)' . $this->_debug_dump_node($node[1]);
-      case 'caststr': return '(STR)' . $this->_debug_dump_node($node[1]);
+      case 'castbool': return '(BOOL)' . self::_debug_dump_node($node[1]);
+      case 'castnum': return '(NUM)' . self::_debug_dump_node($node[1]);
+      case 'caststr': return '(STR)' . self::_debug_dump_node($node[1]);
 
-      case 'not': return '!' . $this->_debug_dump_node($node[1]);
-      case 'neg': return '-' . $this->_debug_dump_node($node[1]);
+      case 'not': return '!' . self::_debug_dump_node($node[1]);
+      case 'neg': return '-' . self::_debug_dump_node($node[1]);
 
-      case 'add': return '(' . $this->_debug_dump_node($node[1]) . ' + ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'sub': return '(' . $this->_debug_dump_node($node[1]) . ' - ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'mul': return '(' . $this->_debug_dump_node($node[1]) . ' * ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'div': return '(' . $this->_debug_dump_node($node[1]) . ' / ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'mod': return '(' . $this->_debug_dump_node($node[1]) . ' % ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'pow': return '(' . $this->_debug_dump_node($node[1]) . ' ^ ' . $this->_debug_dump_node($node[2]) . ')';
+      case 'add': return '(' . self::_debug_dump_node($node[1]) . ' + ' . self::_debug_dump_node($node[2]) . ')';
+      case 'sub': return '(' . self::_debug_dump_node($node[1]) . ' - ' . self::_debug_dump_node($node[2]) . ')';
+      case 'mul': return '(' . self::_debug_dump_node($node[1]) . ' * ' . self::_debug_dump_node($node[2]) . ')';
+      case 'div': return '(' . self::_debug_dump_node($node[1]) . ' / ' . self::_debug_dump_node($node[2]) . ')';
+      case 'mod': return '(' . self::_debug_dump_node($node[1]) . ' % ' . self::_debug_dump_node($node[2]) . ')';
+      case 'pow': return '(' . self::_debug_dump_node($node[1]) . ' ^ ' . self::_debug_dump_node($node[2]) . ')';
 
-      case 'and': return '(' . $this->_debug_dump_node($node[1]) . ' & ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'or': return '(' . $this->_debug_dump_node($node[1]) . ' | ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'xor': return '(' . $this->_debug_dump_node($node[1]) . ' ^^ ' . $this->_debug_dump_node($node[2]) . ')';
+      case 'and': return '(' . self::_debug_dump_node($node[1]) . ' & ' . self::_debug_dump_node($node[2]) . ')';
+      case 'or': return '(' . self::_debug_dump_node($node[1]) . ' | ' . self::_debug_dump_node($node[2]) . ')';
+      case 'xor': return '(' . self::_debug_dump_node($node[1]) . ' ^^ ' . self::_debug_dump_node($node[2]) . ')';
 
-      case 'condition': return '(' . $this->_debug_dump_node($node[1]) . ' ? ' . $this->_debug_dump_node($node[2]) . ' : ' . $this->_debug_dump_node($node[3]) . ')';
+      case 'condition': return '(' . self::_debug_dump_node($node[1]) . ' ? ' . self::_debug_dump_node($node[2]) . ' : ' . self::_debug_dump_node($node[3]) . ')';
 
-      case 'eq': return '(' . $this->_debug_dump_node($node[1]) . ' = ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'neq': return '(' . $this->_debug_dump_node($node[1]) . ' != ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'gt': return '(' . $this->_debug_dump_node($node[1]) . ' > ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'gte': return '(' . $this->_debug_dump_node($node[1]) . ' >= ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'lt': return '(' . $this->_debug_dump_node($node[1]) . ' < ' . $this->_debug_dump_node($node[2]) . ')';
-      case 'lte': return '(' . $this->_debug_dump_node($node[1]) . ' <= ' . $this->_debug_dump_node($node[2]) . ')';
+      case 'eq': return '(' . self::_debug_dump_node($node[1]) . ' = ' . self::_debug_dump_node($node[2]) . ')';
+      case 'neq': return '(' . self::_debug_dump_node($node[1]) . ' != ' . self::_debug_dump_node($node[2]) . ')';
+      case 'gt': return '(' . self::_debug_dump_node($node[1]) . ' > ' . self::_debug_dump_node($node[2]) . ')';
+      case 'gte': return '(' . self::_debug_dump_node($node[1]) . ' >= ' . self::_debug_dump_node($node[2]) . ')';
+      case 'lt': return '(' . self::_debug_dump_node($node[1]) . ' < ' . self::_debug_dump_node($node[2]) . ')';
+      case 'lte': return '(' . self::_debug_dump_node($node[1]) . ' <= ' . self::_debug_dump_node($node[2]) . ')';
       case 'var' : return '{' . $node[1] . '}';
 
       case 'call': 
@@ -1036,7 +1293,7 @@ class SimpleExpression {
         $c = count($node);
         for ($i = 2 ; $i < $c ; $i++) {
           if ($i > 2) $s .= ', ';
-          $s .= $this->_debug_dump_node($node[$i]);
+          $s .= self::_debug_dump_node($node[$i]);
         }
         return $s . ')';
       default:
@@ -1047,7 +1304,7 @@ class SimpleExpression {
           if ($i > 1) $s .= ', ';
           $p = $node[$i];
           if (is_array($p) && (count($p) > 0) && ($p[0] instanceof Closure)) {
-            $s .= $this->_debug_dump_node($p);
+            $s .= self::_debug_dump_node($p);
           } else {
             $s .= $p;
           }
@@ -1061,7 +1318,7 @@ class SimpleExpression {
    * For debug purposes only.
    */
   public function debugDump() {
-    return $this->_debug_dump_node($this->runtree);
+    return self::_debug_dump_node($this->runtree);
   }
 
   /**

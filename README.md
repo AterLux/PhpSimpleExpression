@@ -168,7 +168,7 @@ Supports:
 * Logical opartaions: `&` (logical and), `|` (logical or), `^^` (logical exclusive or)
 * Comparison: `=` (equals), `<>` or `!=` (not equals), `>` (greater than), `>=` (greater than, or equal), `<` (less than), `<=` (less than or equal)
 * Ternary conditional operator <condition> `?` <expression_if_true> [`:` <expression_if_false>] (If 'false' part is omited, it considered as an empty string)
-* Implicit string concatenation (expressions without operators in between are considered as a concatenation of their string values)
+* String concatenation operator '#'. Also optional implicit string concatenation mode available (expressions without operators in between are considered as a concatenation of their string values)
 * Parentheses
 * Function calls
 * Named constants
@@ -183,10 +183,11 @@ Identifiers contain letters or underscore, and can contain digits (except for fi
 Priority of operations (from highest to lowest):
 1. Expressions in **parentheses** are calculated first;
 1. Unary operators;
-1. Implicit **string concatenation** (if no operators between expressions);
+1. Implicit **string concatenation** (when no operators between expressions), if enabled;
 1. Powers (`^` or `**`);
-1. Multiplications, divisions, reminders (`*`, '/', '%');
-1. Additions and subtractions (`+`, '-')
+1. Multiplications, divisions, reminders (`*`, `/`, `%`);
+1. Additions and subtractions (`+`, `-`)
+1. String concatenation (`#`)
 1. Comparisons (`=`, `<>` or `!=`, `>`, `>=`, `<`, `<=`)
 1. Logical and (`&`)
 1. Logical or (`|`)
@@ -229,6 +230,23 @@ At the compile time, it may throw `SimpleExpressionParseError` exception, which 
   }
 ```
 
+## Implicit string concatenation (optional)
+
+The option can be enabled by calling `->implicitConcatenation(true)` on the `SimpleContext` object before the compilation.
+
+When option is enabled, any expressions in succession without operators in between are treated as a concatenation of their string values. For example:
+```php
+    $my_context = new SimpleContext(true); // If boolean `true` is passed, then default context will be used as a parent
+    $my_context->implicitConcatenation(true); // Enable the option
+    $expression = "'Hello, ' obj '!'";
+    $se = new SimpleExpression($expression, $my_context); // Compile the expression, using the provided context
+    $vars = array('obj' => 'World');
+    print $se->run($vars); // Prints "Hello, World!";
+```
+
+In version 1.0 it was the only way to concatenate strings and therefore enabled by default. 
+In version 1.1 explicit string concatenation operator `#` was introduced, and implicit string concatenation is disabled
+                                                                                                                           
 ## Implicit variable access
 
 **NOTE:** All unknown identifiers will be treated as a variable access at the compile time, but at the runtime, all non-existent variables will be silently treated as `NULL`s.
@@ -237,7 +255,7 @@ It may lead to some unwanted situations.
 Consider two expressions: "`sin(x)`" and "`sinus(x)`". 
 
 The first one (considering function `sin` is declared in the context) will be compiled as a function call with a value of variable `x` passed as the parameter.
-The second one (considering function `sinus` is not declared) will be silently compiled as a string concatenation of variables `sinus` and `x`.
+The second one (considering function `sinus` is not declared and implicit string concatenation is enabled) will be silently compiled as a string concatenation of variables `sinus` and `x`.
 
 To avoid such mistakes, it is possible to check all variable names that were used in the expression.
 Their list can be obtained by calling method `getVars()` of the SimpleExpression object. 
@@ -277,3 +295,19 @@ will output `@sin(({x} * (const 6.2831853071796)))`
 In this string `@` means function call; `{...}` - variable access; `(const ...)` - constant node.
 
 Here, PI is a constant, which is greater than 3, so the whole conditional expression is replaced by it's "if_true" part, where named constant is replaced by its value and two constant-on-the-right multiplications `* 2 * PI` are combined into a single one. 
+
+
+## Changelog
+
+### ver 1.1.0:
+
+* added `#` (explicit string concatenation) operator.
+* implicit string concatenation (without operators) now disabled by default it can be enabled in the `SimpleContext` (see `SimpleContext::implicitConcatenation()` method)
+* conditional and boolean logic was changed. Now string `'0'` (also empty array) is considered as 'true'. `NULL`, `false`, `0`, `0.0`, '' are still 'false'
+* `&` (or), `|` (and) and `^^` (exclusive or) are not "boolean" operators anymore. Their result depend on the operands types:
+        `A | B`  equals to  `A ? A : B`
+        `A & B`  equals to  `A ? B : A`
+        `A ^^ B` equals to  `!A ? B : (!B ? A : '')`
+* engine now has OR-chain processor which is used when construction `A | B | C ...` is detected, it returns the first true operand, or the last one if not a such.
+* several new optimizations.
+* (X * 0) => 0 optimization was removed to handle right NAN and INF values of the X expression

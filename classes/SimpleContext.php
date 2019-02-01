@@ -1,7 +1,7 @@
 <?php
 /*************************************************************************************
  *
- *  SimpleExpression 1.0.1
+ *  SimpleExpression 1.1.0
  *
  *  Copyright (C) 2018 Dmitry Pogrebnyak 
  *  (https://aterlux.ru/ dmitry@aterlux.ru)
@@ -53,6 +53,10 @@ class SimpleContext {
    */
   protected $constants;
 
+
+  /** Compiler option: implicit string concatenation (see method implicitConcatenation()) */
+  protected $implicitConcatenation = false;
+
   /**
    * Creates a new instance of a SimpleContext
    * @param SimpleContext|true|NULL $parent specifies a parent context. 
@@ -66,6 +70,9 @@ class SimpleContext {
       trigger_error('SimpleContext constructor: $parent should be a SimpleContext instance', E_USER_WARNING);
     } else {
       $this->parentContext = $parent;
+    }
+    if (isset($this->paretnContext)) { 
+      $this->implicitConcatenation = $this->paretnContext->implicitConcatenation();
     }
   }
 
@@ -149,7 +156,7 @@ class SimpleContext {
    * @param bool $is_volatile, optional parameter, default false. Specifies if function is non-deterministic, i.e. may output different result with the same parameters passed
    */
   public function registerFunction($function, $alias = false, $is_volatile = false) {
-    $func =($function instanceof ReflectionFunction) ? $function : new ReflectionFunction($function);
+    $func =($function instanceof \ReflectionFunction) ? $function : new \ReflectionFunction($function);
 
     $al = strtolower(($alias === false) ? (is_string($function) ? $function : $func->name) : $alias);
     if (!preg_match('#^[A-Za-z_\x7F-\xFF][0-9A-Za-z_\x7F-\xFF]*$#', $al)) {
@@ -321,6 +328,27 @@ class SimpleContext {
       }
     }
     return (isset($this->parentContext)) ? $this->parentContext->findConstant($name) : NULL;
+  }
+
+  /**
+   * Sets or returns the value of the compiler option "implicit string concatentation".
+   * When enabled, any two expressions without any operator in between are considered as a string concatenation.
+   * Implicit concatenation has a highest priority.
+   * When option is disabled then absense of an operator generates an error.
+   * In either case explicit string concatenation operator # is available.
+   * The # operator has lesser priority than math operators, but greater priority than comparisons and logic operators
+   * Initial value of the parameter is "false".
+   * The option is set individualy for each context, but when context is created with a parent context specified,
+   * the option value is copied from the parent context.
+   * @param boolean $value (optional) if specified, sets new value, if NULL then the value remains unchanged
+   * @return previous value
+   */
+  public function implicitConcatenation($value = NULL) {
+    $prev = $this->implicitConcatenation;
+    if (isset($value)) {
+      $this->implicitConcatenation = (bool)$value;
+    }
+    return $prev;
   }
 
 }
